@@ -115,7 +115,7 @@
     <div id="remap-line">1/2: Modes · R: Toggle Mapping · 0-9: Param</div>
     <div id="param-line" style="display:none"></div>
   </div>
-  <script src="/static/flowers/script.js"></script>
+  <script src="/static/flowers/script_webgl.js"></script>
   <script>
     // --- Config (mirrors python values) ---
     const CC_WRIST_ROTATION = 14;
@@ -188,7 +188,7 @@
     // Flowers background styling
     const bgStyle = document.createElement('style');
     bgStyle.textContent = `
-      #bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:0;filter: blur(10px) saturate(1.2) brightness(0.95);} 
+      #bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:0;filter: blur(7px) saturate(1.2) brightness(0.95);} 
       main{position:relative;z-index:1}
       #helper-box{z-index:2}
     `;
@@ -267,7 +267,7 @@
       } catch(err){
         statusLine.textContent = 'Backend Error';
       } finally {
-        setTimeout(poll, 120); // ~8 Hz
+        setTimeout(poll, 80); // ~8 Hz
       }
     }
     poll();
