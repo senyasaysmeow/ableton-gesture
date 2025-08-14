@@ -74,6 +74,7 @@
   </style>
 </head>
 <body>
+  <canvas id="bg"></canvas>
   <main>
     <section>
       <h1>Gesture MIDI</h1>
@@ -114,7 +115,7 @@
     <div id="remap-line">1/2: Modes · R: Toggle Mapping · 0-9: Param</div>
     <div id="param-line" style="display:none"></div>
   </div>
-
+  <script src="/static/flowers/script.js"></script>
   <script>
     // --- Config (mirrors python values) ---
     const CC_WRIST_ROTATION = 14;
@@ -184,6 +185,23 @@
     }
     updateModeLine();
 
+    // Flowers background styling
+    const bgStyle = document.createElement('style');
+    bgStyle.textContent = `
+      #bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:0;filter: blur(10px) saturate(1.2) brightness(0.95);} 
+      main{position:relative;z-index:1}
+      #helper-box{z-index:2}
+    `;
+    document.head.appendChild(bgStyle);
+
+  // Helpers to pick hands
+  function pickLeft(hands){ return (hands||[]).find(h => (h.label||'').toLowerCase()==='left') || null; }
+  function pickRight(hands){ return (hands||[]).find(h => (h.label||'').toLowerCase()==='right') || null; }
+
+  // Simple exponential smoothing
+  const smooth = (prev, next, a) => prev == null ? next : (prev * (1-a) + next * a);
+  let sRot = null, sScale = null, sHue = null;
+
     async function poll(){
       try {
         const res = await fetch('/api/gesture');
@@ -211,6 +229,39 @@
             const el = isLeft ? handLeftEl : handRightEl; el.innerHTML = html; el.style.display = 'block';
           }
         });
+        // Flowers background control: show only with LEFT palm; control with RIGHT hand
+        try {
+          const ctrl = window.flowersControl;
+          if(ctrl){
+            const left = pickLeft(data.hands);
+            ctrl.setVisible(!!(left && left.palm_open));
+            const right = pickRight(data.hands);
+            if(right && right.cc){
+              const rot = typeof right.cc.wrist_rotation === 'number' ? right.cc.wrist_rotation : null;
+              if(rot !== null){
+                const targetSpeed = 0.2 + (rot/127) * 6.0; // a bit wider range
+                sRot = smooth(sRot, targetSpeed, 0.25);
+                ctrl.setRotationSpeed(sRot);
+              }
+              if(typeof right.pinch_norm === 'number'){
+                const targetScale = 0.5 + right.pinch_norm * 2.2; // 0.5..2.7
+                sScale = smooth(sScale, targetScale, 0.25);
+                ctrl.setSizeScale(sScale);
+              }
+              const y = typeof right.cc.y_axis === 'number' ? right.cc.y_axis : null;
+              if(y !== null){
+                const targetHue = Math.round((y/127) * 360);
+                sHue = smooth(sHue, targetHue, 0.2);
+                ctrl.setPaletteFromHue(sHue);
+              }
+            } else {
+              // decay smoothing when not present
+              sRot = sRot == null ? null : smooth(sRot, 1.2, 0.08);
+              sScale = sScale == null ? null : smooth(sScale, 1.0, 0.08);
+            }
+          }
+        } catch(_e){}
+
         statusLine.textContent = 'Live';
         updateModeLine();
       } catch(err){

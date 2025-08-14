@@ -2,12 +2,10 @@ import os
 import cv2
 import time
 import math
-import json
-import queue
 import threading
 import platform
 from collections import defaultdict
-from typing import List, Dict, Any
+from typing import Dict, Any
 
 from flask import Flask, Response, send_from_directory, jsonify, request
 
@@ -20,8 +18,6 @@ import rtmidi
 # =========================
 CAM_WIDTH = 1280
 CAM_HEIGHT = 720
-# CAM_WIDTH = 960  # Uncomment for lower resolution
-# CAM_HEIGHT = 540  # Uncomment for lower resolution
 CAM_INDEX = 0
 
 # MIDI mapping
@@ -49,11 +45,13 @@ MODE_NAMES = {MODE_1: "OpenPalm + Wrist", MODE_2: "Pinch + Y-axis"}
 def clamp(val, lo, hi):
     return max(lo, min(hi, val))
 
-def norm_to_cc(value01):
+def norm_to_cc(value01: float) -> int:
     return int(clamp(value01, 0.0, 1.0) * 127)
 
-def map_deg_to_cc(angle_deg, deg_min=0, deg_max=180):
+def map_deg_to_cc(angle_deg: float, deg_min: float = 0, deg_max: float = 180) -> int:
     angle_deg = clamp(angle_deg, deg_min, deg_max)
+    if deg_max == deg_min:
+        return 0
     return int((angle_deg - deg_min) / (deg_max - deg_min) * 127)
 
 # =========================
@@ -61,13 +59,18 @@ def map_deg_to_cc(angle_deg, deg_min=0, deg_max=180):
 # =========================
 class GestureProcessor:
     def __init__(self):
+        # Public state
         self.mode = MODE_1
         self.mapping_mode = False
-        self.active_param_idx = 0
+        self.active_param_idx = 0  # 0=All, else mode-specific mapping index
+
+        # MIDI and gesture memory
         self.prev_cc = defaultdict(lambda: -1)
         self.note_playing = {'Left': False, 'Right': False}
-        # Initialize last_data so frontend has a stable structure before first frame
-        self.last_data = {
+
+        # Thread safety and last JSON
+        self.lock = threading.Lock()
+        self.last_data: Dict[str, Any] = {
             'timestamp': time.time(),
             'mode': self.mode,
             'mode_name': MODE_NAMES[self.mode],
@@ -75,9 +78,10 @@ class GestureProcessor:
             'active_param_idx': self.active_param_idx,
             'hands': []
         }
-        self.lock = threading.Lock()
 
+        # MediaPipe
         self.mp_hands = mp.solutions.hands
+        self.mp_drawing = mp.solutions.drawing_utils
         self.hands = self.mp_hands.Hands(
             static_image_mode=False,
             max_num_hands=2,
@@ -85,27 +89,42 @@ class GestureProcessor:
             min_tracking_confidence=0.6,
             model_complexity=0
         )
-        self.mp_drawing = mp.solutions.drawing_utils
 
+        # MIDI init
         self.midi_out = rtmidi.MidiOut()
         ports = self.midi_out.get_ports()
-        if not ports:
-            self.midi_out.open_virtual_port("Gesture_Control_Backend")
-        else:
-            self.midi_out.open_port(0)
+        try:
+            if ports:
+                self.midi_out.open_port(0)
+            else:
+                # Create a virtual port on macOS/Linux
+                self.midi_out.open_virtual_port("Gesture MIDI")
+        except Exception:
+            # Fallback: create virtual port if opening first port failed
+            try:
+                self.midi_out.open_virtual_port("Gesture MIDI")
+            except Exception:
+                pass
 
-    def param_active(self, param_code):
+    # Mapping helper: is a parameter active (respects mapping_mode and active_param_idx)
+    def param_active(self, param_code: str) -> bool:
         if not self.mapping_mode or self.active_param_idx == 0:
             return True
         if self.mode == MODE_1:
-            mapping = {3: "M1_ROT", 4: "M1_BTN"}
+            mapping = {3: 'M1_ROT', 4: 'M1_PALM'}
         else:
-            mapping = {3: "M2_PINCH", 4: "M2_Y"}
+            mapping = {3: 'M2_PINCH', 4: 'M2_Y'}
         return mapping.get(self.active_param_idx) == param_code
+
+    def _hand_label_and_channel(self, handedness):
+        label = handedness.classification[0].label  # 'Left' or 'Right'
+        channel = LEFT_HAND_CHANNEL if label == 'Left' else RIGHT_HAND_CHANNEL
+        return label, channel
 
     def process(self, frame, ts):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.hands.process(rgb)
+
         data = {
             'timestamp': ts,
             'mode': self.mode,
@@ -114,117 +133,139 @@ class GestureProcessor:
             'active_param_idx': self.active_param_idx,
             'hands': []
         }
-        handedness_labels = []
-        if results.multi_handedness:
-            for hnd in results.multi_handedness:
-                handedness_labels.append(hnd.classification[0].label)
 
         if results.multi_hand_landmarks:
             for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                label = handedness_labels[idx] if idx < len(handedness_labels) else 'Right'
-                channel = LEFT_HAND_CHANNEL if label == 'Left' else RIGHT_HAND_CHANNEL
+                handedness = results.multi_handedness[idx] if results.multi_handedness else None
+                label, channel = (('Right', RIGHT_HAND_CHANNEL) if handedness is None else self._hand_label_and_channel(handedness))
+
                 lm = hand_landmarks.landmark
-                pinky = lm[self.mp_hands.HandLandmark.PINKY_TIP]
+                # Extract key landmarks
+                wrist = lm[self.mp_hands.HandLandmark.WRIST]
+                thumb_tip = lm[self.mp_hands.HandLandmark.THUMB_TIP]
                 index_tip = lm[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
+
+                # Palm open heuristic (ignore thumb for stability)
+                fingers_extended = [
+                    lm[self.mp_hands.HandLandmark.INDEX_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.INDEX_FINGER_PIP].y,
+                    lm[self.mp_hands.HandLandmark.MIDDLE_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.MIDDLE_FINGER_PIP].y,
+                    lm[self.mp_hands.HandLandmark.RING_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.RING_FINGER_PIP].y,
+                    lm[self.mp_hands.HandLandmark.PINKY_TIP].y < lm[self.mp_hands.HandLandmark.PINKY_PIP].y,
+                ]
+                open_now = all(fingers_extended)
+
+                # Wrist roll angle via palm plane normal vs camera dir
+                index_mcp = lm[self.mp_hands.HandLandmark.INDEX_FINGER_MCP]
+                pinky_mcp = lm[self.mp_hands.HandLandmark.PINKY_MCP]
+                wrist_np = np.array([wrist.x, wrist.y, wrist.z], dtype=np.float32)
+                index_np = np.array([index_mcp.x, index_mcp.y, index_mcp.z], dtype=np.float32)
+                pinky_np = np.array([pinky_mcp.x, pinky_mcp.y, pinky_mcp.z], dtype=np.float32)
+                vec1 = index_np - wrist_np
+                vec2 = pinky_np - wrist_np
+                normal = np.cross(vec1, vec2)
+                norm_val = float(np.linalg.norm(normal))
+                wrist_angle_deg = None
+                cc_rot = None
+                if norm_val > 1e-6:
+                    normal /= norm_val
+                    cam_dir = np.array([0, 0, -1], dtype=np.float32)
+                    dot = float(np.dot(normal, cam_dir))
+                    dot = max(-1.0, min(1.0, dot))
+                    wrist_angle_deg = math.degrees(math.acos(dot))
+                    raw_cc = map_deg_to_cc(wrist_angle_deg, *ROTATION_CLAMP_DEG)
+                    # Invert rotation for right hand only
+                    cc_rot = (127 - raw_cc) if label == 'Right' else raw_cc
+
+                # Pinch
+                dist = math.hypot(thumb_tip.x - index_tip.x, thumb_tip.y - index_tip.y)
+                pinch_norm = clamp((dist - PINCH_MIN) / (PINCH_MAX - PINCH_MIN), 0.0, 1.0)
+                cc_pinch = norm_to_cc(pinch_norm)
+
+                # Y-axis from wrist (top=127)
+                cc_y = int((1.0 - wrist.y) * 127)
+                cc_y = int(clamp(cc_y, 0, 127))
+
+                # Prepare JSON entry
                 hand_info = {
                     'label': label,
-                    'channel': channel,
-                    'cc': {},
-                    'note_on': self.note_playing[label]
+                    'palm_open': bool(open_now),
+                    'wrist_angle_deg': wrist_angle_deg,
+                    'pinch_distance': float(dist),
+                    'pinch_norm': float(pinch_norm),
+                    'cc': {
+                        'wrist_rotation': int(cc_rot) if cc_rot is not None else None,
+                        'pinch': int(cc_pinch),
+                        'y_axis': int(cc_y),
+                    }
                 }
-                if self.mode == MODE_1:
-                    fingers_extended = [
-                        lm[self.mp_hands.HandLandmark.THUMB_TIP].y < lm[self.mp_hands.HandLandmark.THUMB_IP].y,
-                        lm[self.mp_hands.HandLandmark.INDEX_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.INDEX_FINGER_PIP].y,
-                        lm[self.mp_hands.HandLandmark.MIDDLE_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.MIDDLE_FINGER_PIP].y,
-                        lm[self.mp_hands.HandLandmark.RING_FINGER_TIP].y < lm[self.mp_hands.HandLandmark.RING_FINGER_PIP].y,
-                        lm[self.mp_hands.HandLandmark.PINKY_TIP].y < lm[self.mp_hands.HandLandmark.PINKY_PIP].y,
-                    ]
-                    open_now = all(fingers_extended)
-                    hand_info['palm_open'] = bool(open_now)
-                    # Draw landmarks with color depending on palm state
-                    conn_color = (180, 180, 180) if not open_now else (0, 255, 120)
-                    lm_color = (200, 200, 200) if not open_now else (0, 255, 120)
-                    self.mp_drawing.draw_landmarks(
-                        image=frame,
-                        landmark_list=hand_landmarks,
-                        connections=self.mp_hands.HAND_CONNECTIONS,
-                        landmark_drawing_spec=self.mp_drawing.DrawingSpec(color=lm_color, thickness=2, circle_radius=2),
-                        connection_drawing_spec=self.mp_drawing.DrawingSpec(color=conn_color, thickness=2)
-                    )
-                    if open_now:
-                        if self.param_active("M1_BTN") and not self.note_playing[label]:
-                            self.midi_out.send_message([0x90 + channel, OPEN_PALM_NOTE, NOTE_VELOCITY])
-                            self.note_playing[label] = True
-                    else:
-                        if self.note_playing[label] and self.param_active("M1_BTN"):
-                            self.midi_out.send_message([0x80 + channel, OPEN_PALM_NOTE, 0])
-                        self.note_playing[label] = False
-                    hand_info['note_on'] = self.note_playing[label]
 
-                    # Wrist roll
-                    wrist_lm = lm[self.mp_hands.HandLandmark.WRIST]
-                    index_mcp = lm[self.mp_hands.HandLandmark.INDEX_FINGER_MCP]
-                    pinky_mcp = lm[self.mp_hands.HandLandmark.PINKY_MCP]
-                    wrist_np = np.array([wrist_lm.x, wrist_lm.y, wrist_lm.z], dtype=np.float32)
-                    index_np = np.array([index_mcp.x, index_mcp.y, index_mcp.z], dtype=np.float32)
-                    pinky_np = np.array([pinky_mcp.x, pinky_mcp.y, pinky_mcp.z], dtype=np.float32)
-                    vec1 = index_np - wrist_np
-                    vec2 = pinky_np - wrist_np
-                    normal = np.cross(vec1, vec2)
-                    norm = np.linalg.norm(normal)
-                    angle_deg = None
-                    if norm > 1e-6:
-                        normal /= norm
-                        cam_dir = np.array([0,0,-1], dtype=np.float32)
-                        dot = float(np.dot(normal, cam_dir))
-                        dot = max(-1.0, min(1.0, dot))
-                        angle_deg = math.degrees(math.acos(dot))
-                        cc_val_raw = map_deg_to_cc(angle_deg, *ROTATION_CLAMP_DEG)
-                        # Invert rotation for right hand only
-                        cc_val = (127 - cc_val_raw) if label == 'Right' else cc_val_raw
-                        if self.param_active("M1_ROT"):
-                            key = (label, CC_WRIST_ROTATION)
-                            if abs(cc_val - self.prev_cc[key]) >= CC_DEADBAND:
-                                self.midi_out.send_message([0xB0 + channel, CC_WRIST_ROTATION, cc_val])
-                                self.prev_cc[key] = cc_val
-                        hand_info['cc']['wrist_rotation'] = cc_val
-                        hand_info['wrist_angle_deg'] = angle_deg
+                # MIDI per mode/mapping
+                if self.mode == MODE_1:
+                    # Open palm note
+                    want_note = open_now and self.param_active('M1_PALM')
+                    if want_note and not self.note_playing[label]:
+                        try:
+                            self.midi_out.send_message([0x90 + channel, OPEN_PALM_NOTE, NOTE_VELOCITY])
+                        except Exception:
+                            pass
+                        self.note_playing[label] = True
+                    elif not want_note and self.note_playing[label]:
+                        try:
+                            self.midi_out.send_message([0x80 + channel, OPEN_PALM_NOTE, 0])
+                        except Exception:
+                            pass
+                        self.note_playing[label] = False
+
+                    # Wrist rotation CC
+                    if cc_rot is not None and self.param_active('M1_ROT'):
+                        key = (label, CC_WRIST_ROTATION)
+                        if abs(cc_rot - self.prev_cc[key]) >= CC_DEADBAND:
+                            try:
+                                self.midi_out.send_message([0xB0 + channel, CC_WRIST_ROTATION, int(cc_rot)])
+                            except Exception:
+                                pass
+                            self.prev_cc[key] = int(cc_rot)
+
                 else:  # MODE_2
-                    thumb_tip = lm[self.mp_hands.HandLandmark.THUMB_TIP]
-                    dist = math.hypot(thumb_tip.x - index_tip.x, thumb_tip.y - index_tip.y)
-                    norm_pinch = clamp((dist - PINCH_MIN) / (PINCH_MAX - PINCH_MIN), 0.0, 1.0)
-                    cc_pinch = norm_to_cc(norm_pinch)
-                    if self.param_active("M2_PINCH"):
+                    # Pinch CC
+                    if self.param_active('M2_PINCH'):
                         key = (label, CC_PINCH)
                         if abs(cc_pinch - self.prev_cc[key]) >= CC_DEADBAND:
-                            self.midi_out.send_message([0xB0 + channel, CC_PINCH, cc_pinch])
-                            self.prev_cc[key] = cc_pinch
-                    hand_info['cc']['pinch'] = cc_pinch
-                    hand_info['pinch_distance'] = dist
-                    hand_info['pinch_norm'] = norm_pinch
-                    # Draw landmarks in neutral color
-                    self.mp_drawing.draw_landmarks(
-                        image=frame,
-                        landmark_list=hand_landmarks,
-                        connections=self.mp_hands.HAND_CONNECTIONS,
-                        landmark_drawing_spec=self.mp_drawing.DrawingSpec(color=(200,200,200), thickness=2, circle_radius=2),
-                        connection_drawing_spec=self.mp_drawing.DrawingSpec(color=(180,180,180), thickness=2)
-                    )
-                    # Draw line between thumb tip and index tip
+                            try:
+                                self.midi_out.send_message([0xB0 + channel, CC_PINCH, int(cc_pinch)])
+                            except Exception:
+                                pass
+                            self.prev_cc[key] = int(cc_pinch)
+
+                    # Y-axis CC
+                    if self.param_active('M2_Y'):
+                        key_y = (label, CC_Y_AXIS)
+                        if abs(cc_y - self.prev_cc[key_y]) >= CC_DEADBAND:
+                            try:
+                                self.midi_out.send_message([0xB0 + channel, CC_Y_AXIS, int(cc_y)])
+                            except Exception:
+                                pass
+                            self.prev_cc[key_y] = int(cc_y)
+
+                # Drawing
+                if self.mode == MODE_1:
+                    conn_color = (0, 255, 120) if open_now else (180, 180, 180)
+                else:
+                    conn_color = (180, 180, 180)
+                lm_color = (200, 200, 200)
+                self.mp_drawing.draw_landmarks(
+                    image=frame,
+                    landmark_list=hand_landmarks,
+                    connections=self.mp_hands.HAND_CONNECTIONS,
+                    landmark_drawing_spec=self.mp_drawing.DrawingSpec(color=lm_color, thickness=2, circle_radius=2),
+                    connection_drawing_spec=self.mp_drawing.DrawingSpec(color=conn_color, thickness=2)
+                )
+
+                if self.mode == MODE_2:
                     h, w = frame.shape[:2]
                     p1 = (int(thumb_tip.x * w), int(thumb_tip.y * h))
                     p2 = (int(index_tip.x * w), int(index_tip.y * h))
                     cv2.line(frame, p1, p2, (255, 100, 100), 2)
-
-                    cc_y = int((1.0 - pinky.y) * 127)
-                    cc_y = clamp(cc_y, 0, 127)
-                    if self.param_active("M2_Y"):
-                        key_y = (label, CC_Y_AXIS)
-                        if abs(cc_y - self.prev_cc[key_y]) >= CC_DEADBAND:
-                            self.midi_out.send_message([0xB0 + channel, CC_Y_AXIS, cc_y])
-                            self.prev_cc[key_y] = cc_y
-                    hand_info['cc']['y_axis'] = cc_y
 
                 data['hands'].append(hand_info)
 
@@ -323,10 +364,6 @@ def stream():
             if frame is None:
                 time.sleep(0.05)
                 continue
-            # annotate basics
-            # cv2.putText(frame, MODE_NAMES[processor.mode], (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,120), 2, cv2.LINE_AA)
-            # hands_count = len(processor.last_data.get('hands', [])) if processor.last_data else 0
-            # cv2.putText(frame, f"Hands:{hands_count}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200,200,200), 2, cv2.LINE_AA)
             ret, jpg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
             if not ret:
                 continue
