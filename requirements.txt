@@ -1,0 +1,5 @@
+flask>=2.3.0
+mediapipe
+python-rtmidi
+opencv-python
+numpy
