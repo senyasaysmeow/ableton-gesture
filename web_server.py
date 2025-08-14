@@ -142,6 +142,7 @@ class GestureProcessor:
                 lm = hand_landmarks.landmark
                 # Extract key landmarks
                 wrist = lm[self.mp_hands.HandLandmark.WRIST]
+                pinky = lm[self.mp_hands.HandLandmark.PINKY_TIP]
                 thumb_tip = lm[self.mp_hands.HandLandmark.THUMB_TIP]
                 index_tip = lm[self.mp_hands.HandLandmark.INDEX_FINGER_TIP]
 
@@ -182,7 +183,7 @@ class GestureProcessor:
                 cc_pinch = norm_to_cc(pinch_norm)
 
                 # Y-axis from wrist (top=127)
-                cc_y = int((1.0 - wrist.y) * 127)
+                cc_y = int((1.0 - pinky.y) * 127)
                 cc_y = int(clamp(cc_y, 0, 127))
 
                 # Prepare JSON entry
