@@ -53,7 +53,7 @@
     // visibility smoothing
     visibility: 0.0,
     visibilityTarget: 0.0,
-    fadeRate: 6.0,
+    fadeRate: 8.0,
   };
 
   class Flower{
@@ -349,6 +349,60 @@
     return new Float32Array(instances);
   }
 
+  // Per-flower builders for correct intra-flower layering
+  function buildPetalsFor(f){
+    const instances = [];
+    const twoPI = Math.PI*2;
+    const alpha = f.alpha();
+    const petals = f.petals;
+    const layerCount = f.doubleLayer ? 2 : 1;
+    const sat = f.sat;
+    const light = f.light;
+    for(let layer=0; layer<layerCount; layer++){
+      const petCount = layer==0 ? petals : Math.max(5, Math.round(petals*0.7));
+      const baseR = (layer==0 ? f.radius : f.radius*0.65) * state.sizeScale;
+      for(let i=0;i<petCount;i++){
+        const ang = (i/petCount)*twoPI + (layer==1 ? Math.PI/petCount : 0);
+        const rot = f.rotation + ang;
+        const hue = f.hue;
+        const size = baseR * (i % 2 ? 1.15 : 0.95);
+        instances.push(f.x, f.y, size, rot, hue, alpha, sat, light);
+      }
+    }
+    return new Float32Array(instances);
+  }
+  function buildCoreFor(f){
+    const instances = [];
+    const alpha = f.alpha();
+    const coreR = (f.radius * state.sizeScale) * 0.2;
+    const hue = f.hue; const sat = Math.min(1.0, f.sat + 0.10); const light = Math.max(0.0, f.light - 0.10);
+    instances.push(f.x, f.y, coreR, 0.0, hue, alpha, sat, light);
+    return new Float32Array(instances);
+  }
+  function buildDotsFor(f){
+    const instances = [];
+    const alpha = f.alpha()*0.9;
+    const dots = 16;
+    const ringR = (f.radius * state.sizeScale) * 0.25;
+    const hue = f.hue; const sat = Math.min(1.0, f.sat + 0.2); const light = Math.min(1.0, f.light + 0.1);
+    for(let i=0;i<dots;i++){
+      const ang = (i/dots)*Math.PI*2 + (f.rotation*0.2);
+      const dx = Math.cos(ang) * ringR;
+      const dy = Math.sin(ang) * ringR;
+      const size = Math.max(0.8, (f.radius*state.sizeScale)*0.03);
+      instances.push(f.x+dx, f.y+dy, size, 0.0, hue, alpha, sat, light);
+    }
+    return new Float32Array(instances);
+  }
+  function buildShadowFor(f){
+    const instances = [];
+    const alpha = f.alpha();
+    const size = (f.radius * state.sizeScale) * 0.82;
+    const hue = f.hue; const sat = Math.max(0.0, f.sat - 0.2); const light = 0.20;
+    instances.push(f.x, f.y, size, 0.0, hue, alpha, sat, light);
+    return new Float32Array(instances);
+  }
+
   function animate(ts){
     if(state.lastTime===undefined) state.lastTime = ts;
     const dtRaw = (ts - state.lastTime)/1000;
@@ -379,49 +433,51 @@
   const k = Math.min(1, state.fadeRate * dt);
   state.visibility += (state.visibilityTarget - state.visibility) * k;
 
-  // Upload and draw: shadow (behind petals)
-  let arr = buildShadowInstances();
-  let instanceCount = Math.min(arr.length / 8, maxInstances);
-  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
-
+  // Per-flower rendering to guarantee intra-flower order and inter-flower occlusion
   gl.useProgram(prog);
   gl.uniform2f(uResolution, canvas.width / DPR, canvas.height / DPR);
   gl.uniform1f(uGlobalOpacity, vis);
-  gl.uniform1i(uMode, 3);
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
 
-  // Upload and draw: petals
-  arr = buildPetalInstances();
-  instanceCount = Math.min(arr.length / 8, maxInstances);
-  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
-
-  // uniforms common
-  gl.useProgram(prog);
-  gl.uniform2f(uResolution, canvas.width / DPR, canvas.height / DPR);
-  gl.uniform1f(uGlobalOpacity, vis);
-
-  gl.uniform1i(uMode, 0);
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
-
-  // Core pass
-  arr = buildCoreInstances();
-  instanceCount = Math.min(arr.length / 8, maxInstances);
-  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
-  gl.uniform1i(uMode, 1);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
-
-  // Dots pass
-  arr = buildDotInstances();
-  instanceCount = Math.min(arr.length / 8, maxInstances);
-  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
-  gl.uniform1i(uMode, 2);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
+  for(let idx=0; idx<state.flowers.length; idx++){
+    const f = state.flowers[idx];
+    // Shadow
+    let arr = buildShadowFor(f);
+    let instanceCount = Math.min(arr.length / 8, maxInstances);
+    if(instanceCount > 0){
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
+      gl.uniform1i(uMode, 3);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
+    }
+    // Petals
+    arr = buildPetalsFor(f);
+    instanceCount = Math.min(arr.length / 8, maxInstances);
+    if(instanceCount > 0){
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
+      gl.uniform1i(uMode, 0);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
+    }
+    // Core
+    arr = buildCoreFor(f);
+    instanceCount = Math.min(arr.length / 8, maxInstances);
+    if(instanceCount > 0){
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
+      gl.uniform1i(uMode, 1);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
+    }
+    // Dots
+    arr = buildDotsFor(f);
+    instanceCount = Math.min(arr.length / 8, maxInstances);
+    if(instanceCount > 0){
+      gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr.subarray(0, instanceCount*8));
+      gl.uniform1i(uMode, 2);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, instanceCount);
+    }
+  }
 
     requestAnimationFrame(animate);
   }

@@ -151,6 +151,7 @@
     const ccEl = document.getElementById('cc-readout');
   const handLeftEl = document.getElementById('hand-left');
   const handRightEl = document.getElementById('hand-right');
+  const bgCanvas = document.getElementById('bg');
 
     function activeParamName(){
       const list = PARAMS[mode] || [];
@@ -200,7 +201,7 @@
 
   // Simple exponential smoothing
   const smooth = (prev, next, a) => prev == null ? next : (prev * (1-a) + next * a);
-  let sRot = null, sScale = null, sHue = null;
+  let sRot = null, sScale = null, sHue = null, sBlur = 10;
 
     async function poll(){
       try {
@@ -235,6 +236,17 @@
           if(ctrl){
             const left = pickLeft(data.hands);
             ctrl.setVisible(!!(left && left.palm_open));
+            // Left-hand Y-axis controls blur intensity (0..127). Top=127 => less blur; Bottom=0 => more blur.
+            if(left && left.cc && typeof left.cc.y_axis === 'number'){
+              const y = left.cc.y_axis;
+              const targetBlur = (1 - (y/127)) * 20; // 0px..24px
+              sBlur = smooth(sBlur, targetBlur, 0.25);
+              bgCanvas.style.filter = `blur(${sBlur.toFixed(1)}px) saturate(1.2) brightness(0.95)`;
+            } else {
+              // Ease back towards default blur when left hand isn’t present
+              sBlur = smooth(sBlur, 10, 0.1);
+              bgCanvas.style.filter = `blur(${sBlur.toFixed(1)}px) saturate(1.2) brightness(0.95)`;
+            }
             const right = pickRight(data.hands);
             if(right && right.cc){
               const rot = typeof right.cc.wrist_rotation === 'number' ? right.cc.wrist_rotation : null;

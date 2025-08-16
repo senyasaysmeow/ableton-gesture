@@ -16,8 +16,8 @@ import rtmidi
 # =========================
 # Config
 # =========================
-CAM_WIDTH = 1280
-CAM_HEIGHT = 720
+CAM_WIDTH = 960
+CAM_HEIGHT = 540
 CAM_INDEX = 0
 
 # MIDI mapping
@@ -365,7 +365,7 @@ def stream():
             if frame is None:
                 time.sleep(0.05)
                 continue
-            ret, jpg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 100])
+            ret, jpg = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
             if not ret:
                 continue
             yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + jpg.tobytes() + b'\r\n')
