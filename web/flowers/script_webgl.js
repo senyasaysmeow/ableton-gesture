@@ -10,7 +10,7 @@
 
   let gl = null;
   try {
-    gl = canvas.getContext('webgl2', { alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+    gl = canvas.getContext('webgl2', { alpha: false, antialias: true, premultipliedAlpha: false, powerPreference: 'high-performance' });
   } catch(_){ gl = null; }
   if(!gl){
     const s = document.createElement('script');
@@ -32,6 +32,7 @@
   }
   window.addEventListener('resize', resize, { passive:true });
   resize();
+  try { canvas.style.opacity = '1'; } catch(_){}
 
   // Utilities
   const clamp = (x,a,b)=> Math.max(a, Math.min(b,x));
@@ -166,7 +167,7 @@
       // Gradient along axis
       float g = clamp(uv.x*0.5 + 0.5, 0.0, 1.0);
       float hue = mod(vHue, 360.0);
-      float s = clamp(vSat, 0.0, 1.0);
+  float s = clamp(vSat * 1.02, 0.0, 1.0);
       // brighten towards tip, darker at base
       float l0 = clamp(vLight + 0.20, 0.0, 1.0);
       float l1 = clamp(vLight - 0.20, 0.0, 1.0);
@@ -185,7 +186,7 @@
       float lCenter = clamp(vLight + 0.28, 0.0, 1.0);
       float lEdge = clamp(vLight - 0.25, 0.0, 1.0);
       vec3 center = vec3(1.0);
-      vec3 edgeCol = hsl2rgb(mod(vHue+15.0,360.0), clamp(vSat,0.0,1.0), lEdge);
+  vec3 edgeCol = hsl2rgb(mod(vHue+15.0,360.0), clamp(vSat*1.02,0.0,1.0), lEdge);
       vec3 col = mix(center, edgeCol, smoothstep(0.0,1.0,r));
       float alpha = edge * vAlpha;
       if(alpha < 0.01) discard;
@@ -194,7 +195,7 @@
       // Ring dots: small bright circles
   float r = length(uv);
       float edge = smoothstep(1.0, 0.0, r);
-      vec3 col = hsl2rgb(mod(vHue+45.0,360.0), 0.9, 0.65);
+  vec3 col = hsl2rgb(mod(vHue+45.0,360.0), 0.95, 0.68);
       float alpha = edge * vAlpha;
       if(alpha < 0.01) discard;
       outColor = vec4(col, alpha);
@@ -277,6 +278,7 @@
   const uMode = gl.getUniformLocation(prog, 'uMode');
 
   gl.enable(gl.BLEND);
+  // Straight alpha on an opaque canvas; this avoids double-premultiplication gray artifacts in Arc
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
   function spawnFlower(){ state.flowers.push(new Flower()); }
@@ -353,9 +355,11 @@
     const dt = Math.max(0.0005, Math.min(0.03, dtRaw*0.75 + (state._prevDt||dtRaw)*0.25));
     state._prevDt = dt; state.lastTime = ts;
 
-    // background
-    gl.clearColor(10/255, 12/255, 18/255, 0.82);
-    gl.clear(gl.COLOR_BUFFER_BIT);
+  // background: fade darkness with visibility while keeping opaque alpha
+  const vis = clamp(state.visibility, 0, 1);
+  const bgScale = 0.15 + 0.85 * vis; // 0.15 when hidden, 1.0 when fully visible
+  gl.clearColor((10/255)*bgScale, (12/255)*bgScale, (18/255)*bgScale, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT);
 
     // spawn/retire
     state.spawnTimer -= dt;
@@ -372,11 +376,8 @@
     }
 
     // visibility smoothing
-    const k = Math.min(1, state.fadeRate * dt);
-    state.visibility += (state.visibilityTarget - state.visibility) * k;
-  const vis = clamp(state.visibility, 0, 1);
-  // Also apply CSS opacity so the element is actually visible under page styles
-  canvas.style.opacity = String(vis);
+  const k = Math.min(1, state.fadeRate * dt);
+  state.visibility += (state.visibilityTarget - state.visibility) * k;
 
   // Upload and draw: shadow (behind petals)
   let arr = buildShadowInstances();
