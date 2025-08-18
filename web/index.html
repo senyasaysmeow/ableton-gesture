@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <title>Gesture MIDI</title>
@@ -14,65 +15,262 @@
       --fg-dim: #9ca3af;
       --accent: #58d68d;
       --warn: #ffb347;
-  --hot: #ff4fa3; /* pink for active param */
-  --red: #ff6b6b;
-  --blue: #6dbdff;
+      --hot: #ff4fa3;
+      /* pink for active param */
+      --red: #ff6b6b;
+      --blue: #6dbdff;
       --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
-    * { box-sizing: border-box; }
-    html, body { height:100%; margin:0; }
-    body { background: var(--bg); color: var(--fg); font-family: var(--mono); -webkit-font-smoothing: antialiased; }
-    body::before { /* subtle texture overlay */
-      content: "GESTURE MIDI CONTROL  •  HAND TRACKING  •  WEBMIDI";
-      position: fixed; inset:0; pointer-events:none; opacity:0.035; font-size:11vw; line-height:0.9; white-space:pre; color:#fff; filter: blur(2px); mix-blend-mode:overlay; user-select:none;
+
+    * {
+      box-sizing: border-box;
     }
-    main { max-width: 1080px; padding: 48px clamp(24px,4vw,72px) 140px; }
-    section { margin-bottom: 68px; }
-    h1, h2 { font-weight:600; margin:0 0 12px; letter-spacing:1px; text-transform:uppercase; color: var(--fg); }
-    p { margin:0 0 14px; color: var(--fg-dim); font-size:14px; line-height:1.5; }
-    canvas, video { display:block; }
-  #stage-wrapper { position: relative; width: 960px; }
-  #video { width:960px; height:540px; background:#111; object-fit:cover; }
-  #canvas { position:absolute; inset:0; width:960px; height:540px; }
-    .row { display:flex; gap:30px; align-items:flex-start; flex-wrap:wrap; }
 
-  #helper-box { position:fixed; left:50%; transform:translateX(-50%); bottom:28px; font-size:14px; line-height:1.45; background:rgba(255,255,255,0.05); padding:18px 26px; border-radius:6px; color:var(--fg-dim); backdrop-filter: blur(4px); }
-    #helper-box b { color:var(--fg); font-weight:600; }
-    #status-line { color: var(--accent); font-weight:600; }
-    #mode-line { color: var(--warn); }
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+    }
 
-  /* Hand states overlays over the camera */
-  #hand-left, #hand-right { position:absolute; top:12px; background: rgba(0,0,0,0.45); padding: 10px 12px; border-radius: 6px; color: var(--fg); font-size: 16px; line-height: 1.35; pointer-events: none; max-width: 46%; display: none; }
-  #hand-left { left:12px; text-align:left; }
-  #hand-right { right:12px; text-align:right; }
-  .hand { display:block; white-space: nowrap; }
-  .lbl { color: var(--fg-dim); margin: 0 8px; }
-  .param-open { color: var(--accent); font-weight: 600; }
-  .param-closed { color: var(--fg-dim); font-weight: 600; }
-  .param-rot { color: var(--accent); }
-  .param-pinch { color: var(--hot); }
-  .param-dist { color: var(--blue); }
-  .param-y { color: var(--warn); }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--mono);
+      -webkit-font-smoothing: antialiased;
+    }
 
-    .kv { margin:4px 0 12px; font-size:12px; }
-    .kv span { display:inline-block; min-width:140px; color:var(--fg-dim); }
-    .badge { display:inline-block; padding:3px 8px; background:#111; color:var(--fg-dim); border-radius:3px; margin-right:6px; font-size:11px; }
-  .param-hot { color: var(--hot); font-weight:600; }
-    .title-block { margin-top:40px; }
-    strong { color: var(--fg); }
-    hr { border:none; height:1px; background:linear-gradient(90deg,rgba(255,255,255,0.25),rgba(255,255,255,0)); margin:56px 0 40px; }
+    body::before {
+      /* subtle texture overlay */
+      content: "GESTURE MIDI CONTROL  •  HAND TRACKING  •  WEBMIDI";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.035;
+      font-size: 11vw;
+      line-height: 0.9;
+      white-space: pre;
+      color: #fff;
+      filter: blur(2px);
+      mix-blend-mode: overlay;
+      user-select: none;
+    }
 
-    a { color: var(--accent); text-decoration:none; }
-    a:hover { text-decoration:underline; }
+    main {
+      max-width: 1080px;
+      padding: 48px clamp(24px, 4vw, 72px) 140px;
+    }
+
+    section {
+      margin-bottom: 68px;
+    }
+
+    h1,
+    h2 {
+      font-weight: 600;
+      margin: 0 0 12px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--fg);
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--fg-dim);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    canvas,
+    video {
+      display: block;
+    }
+
+    #stage-wrapper {
+      position: relative;
+      width: 960px;
+    }
+
+    #video {
+      width: 960px;
+      height: 540px;
+      background: #111;
+      object-fit: cover;
+    }
+
+    #canvas {
+      position: absolute;
+      inset: 0;
+      width: 960px;
+      height: 540px;
+    }
+
+    .row {
+      display: flex;
+      gap: 30px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+
+    #helper-box {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 28px;
+      font-size: 14px;
+      line-height: 1.45;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 18px 26px;
+      border-radius: 6px;
+      color: var(--fg-dim);
+      backdrop-filter: blur(4px);
+    }
+
+    #helper-box b {
+      color: var(--fg);
+      font-weight: 600;
+    }
+
+    #status-line {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    #mode-line {
+      color: var(--warn);
+    }
+
+    /* Hand states overlays over the camera */
+    #hand-left,
+    #hand-right {
+      position: absolute;
+      top: 12px;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 10px 12px;
+      border-radius: 6px;
+      color: var(--fg);
+      font-size: 16px;
+      line-height: 1.35;
+      pointer-events: none;
+      max-width: 46%;
+      display: none;
+    }
+
+    #hand-left {
+      left: 12px;
+      text-align: left;
+    }
+
+    #hand-right {
+      right: 12px;
+      text-align: right;
+    }
+
+    .hand {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .lbl {
+      color: var(--fg-dim);
+      margin: 0 8px;
+    }
+
+    .param-open {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .param-closed {
+      color: var(--fg-dim);
+      font-weight: 600;
+    }
+
+    .param-rot {
+      color: var(--accent);
+    }
+
+    .param-pinch {
+      color: var(--hot);
+    }
+
+    .param-dist {
+      color: var(--blue);
+    }
+
+    .param-y {
+      color: var(--warn);
+    }
+
+    .kv {
+      margin: 4px 0 12px;
+      font-size: 12px;
+    }
+
+    .kv span {
+      display: inline-block;
+      min-width: 140px;
+      color: var(--fg-dim);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #111;
+      color: var(--fg-dim);
+      border-radius: 3px;
+      margin-right: 6px;
+      font-size: 11px;
+    }
+
+    .param-hot {
+      color: var(--hot);
+      font-weight: 600;
+    }
+
+    .title-block {
+      margin-top: 40px;
+    }
+
+    strong {
+      color: var(--fg);
+    }
+
+    hr {
+      border: none;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0));
+      margin: 56px 0 40px;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
 
     /* Hide borders / outlines on focus but keep accessibility via box-shadow */
-    button:focus-visible, a:focus-visible { outline:none; box-shadow:0 0 0 2px var(--accent); }
+    button:focus-visible,
+    a:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--accent);
+    }
 
-    @media (max-width:760px){
-      #stage-wrapper, #video, #canvas { width:100%; height:auto; aspect-ratio:16/9; }
+    @media (max-width:760px) {
+
+      #stage-wrapper,
+      #video,
+      #canvas {
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16/9;
+      }
     }
   </style>
 </head>
+
 <body>
   <canvas id="bg"></canvas>
   <main>
@@ -80,7 +278,8 @@
       <h1>Gesture MIDI</h1>
       <p>Backend‑processed hand → MIDI. Browser just displays the MJPEG stream and polled controller values.</p>
       <div id="stage-wrapper">
-        <img id="stream" src="/stream" alt="video stream" style="width:960px;height:540px;display:block;background:#111;object-fit:cover;" />
+        <img id="stream" src="/stream" alt="video stream"
+          style="width:960px;height:540px;display:block;background:#111;object-fit:cover;" />
         <div id="hand-left"></div>
         <div id="hand-right"></div>
       </div>
@@ -88,23 +287,28 @@
 
     <section class="title-block">
       <h2>Modes</h2>
-      <p><strong>Mode 1</strong>: Open palm note + wrist roll CC. <strong>Mode 2</strong>: Pinch distance CC + wrist Y-axis CC.</p>
+      <p><strong>Mode 1</strong>: Open palm note + wrist roll CC. <strong>Mode 2</strong>: Pinch distance CC + wrist
+        Y-axis CC.</p>
       <p>Toggle modes with keys 1 / 2. Mapping mode restricts outputs to a single parameter for easy DAW learn.</p>
     </section>
 
     <section class="title-block">
       <h2>Controls</h2>
-  <p><strong>1</strong> OpenPalm+Wrist • <strong>2</strong> Pinch+Y • <strong>R</strong> Toggle Mapping • <strong>0-9</strong> Param Select • <strong>M</strong> Minimal HUD • <strong>H</strong> Help • <strong>Q</strong> (reserved)</p>
+      <p><strong>1</strong> OpenPalm+Wrist • <strong>2</strong> Pinch+Y • <strong>R</strong> Toggle Mapping •
+        <strong>0-9</strong> Param Select • <strong>M</strong> Minimal HUD • <strong>H</strong> Help •
+        <strong>Q</strong> (reserved)</p>
     </section>
 
     <section class="title-block">
       <h2>Mapping</h2>
-      <p>While in mapping mode only the chosen parameter (Wrist CC, Palm Note, Pinch CC, or Y CC) is emitted; others are suppressed to avoid accidental assignment.</p>
+      <p>While in mapping mode only the chosen parameter (Wrist CC, Palm Note, Pinch CC, or Y CC) is emitted; others are
+        suppressed to avoid accidental assignment.</p>
     </section>
 
     <section class="title-block">
       <h2>Implementation</h2>
-  <p>Python backend (OpenCV + MediaPipe + rtmidi) supplies /stream (MJPEG) and /api/gesture JSON. This page only consumes those endpoints.</p>
+      <p>Python backend (OpenCV + MediaPipe + rtmidi) supplies /stream (MJPEG) and /api/gesture JSON. This page only
+        consumes those endpoints.</p>
     </section>
 
   </main>
@@ -134,36 +338,36 @@
 
     // Mapping parameter groups (keys mirror desktop)
     const PARAMS = {
-      [MODE_1]: [ {k:0,name:'All'}, {k:3,name:'Wrist CC'}, {k:4,name:'Palm Note'} ],
-      [MODE_2]: [ {k:0,name:'All'}, {k:3,name:'Pinch CC'}, {k:4,name:'Y CC'} ],
+      [MODE_1]: [{ k: 0, name: 'All' }, { k: 3, name: 'Wrist CC' }, { k: 4, name: 'Palm Note' }],
+      [MODE_2]: [{ k: 0, name: 'All' }, { k: 3, name: 'Pinch CC' }, { k: 4, name: 'Y CC' }],
     };
 
-  // --- State (frontend mirrors backend authoritative state) ---
+    // --- State (frontend mirrors backend authoritative state) ---
     let mode = MODE_1;
     let mappingMode = false;
     let activeParam = 0;
-  // minimalHUD removed for web simplicity
+    // minimalHUD removed for web simplicity
     const fpsEl = document.getElementById('fps');
-  const modeLine = document.getElementById('mode-line');
-  const statusLine = document.getElementById('status-line');
-  const remapLine = document.getElementById('remap-line');
-  const paramLine = document.getElementById('param-line');
+    const modeLine = document.getElementById('mode-line');
+    const statusLine = document.getElementById('status-line');
+    const remapLine = document.getElementById('remap-line');
+    const paramLine = document.getElementById('param-line');
     const ccEl = document.getElementById('cc-readout');
-  const handLeftEl = document.getElementById('hand-left');
-  const handRightEl = document.getElementById('hand-right');
-  const bgCanvas = document.getElementById('bg');
+    const handLeftEl = document.getElementById('hand-left');
+    const handRightEl = document.getElementById('hand-right');
+    const bgCanvas = document.getElementById('bg');
 
-    function activeParamName(){
+    function activeParamName() {
       const list = PARAMS[mode] || [];
       const found = list.find(p => p.k === activeParam);
       return found ? found.name : 'All';
     }
-    function activeParamName(){
+    function activeParamName() {
       const list = PARAMS[mode] || [];
       const found = list.find(p => p.k === activeParam);
       return found ? found.name : 'All';
     }
-    function buildParamDisplayHTML(){
+    function buildParamDisplayHTML() {
       const list = PARAMS[mode] || [];
       return list.map(p => {
         const label = `${p.k}:${p.name}`;
@@ -172,15 +376,15 @@
           : `<span>${label}</span>`;
       }).join('  ');
     }
-    function updateModeLine(){
-      if(mappingMode){
-        modeLine.textContent = `Mode: ${MODE_NAMES[mode]} | Mapping: ${activeParam===0?'All':activeParamName()} (${activeParam})`;
+    function updateModeLine() {
+      if (mappingMode) {
+        modeLine.textContent = `Mode: ${MODE_NAMES[mode]} | Mapping: ${activeParam === 0 ? 'All' : activeParamName()} (${activeParam})`;
         paramLine.style.display = '';
-  paramLine.innerHTML = 'Params: ' + buildParamDisplayHTML();
+        paramLine.innerHTML = 'Params: ' + buildParamDisplayHTML();
         remapLine.textContent = 'R: Exit Mapping  ·  0-9: Select Param';
       } else {
         modeLine.textContent = `Mode: ${MODE_NAMES[mode]} | Mapping: OFF`;
-  paramLine.style.display = 'none';
+        paramLine.style.display = 'none';
         remapLine.textContent = '1/2: Modes · R: Toggle Mapping · 0-9: Param';
       }
     }
@@ -195,33 +399,33 @@
     `;
     document.head.appendChild(bgStyle);
 
-  // Helpers to pick hands
-  function pickLeft(hands){ return (hands||[]).find(h => (h.label||'').toLowerCase()==='left') || null; }
-  function pickRight(hands){ return (hands||[]).find(h => (h.label||'').toLowerCase()==='right') || null; }
+    // Helpers to pick hands
+    function pickLeft(hands) { return (hands || []).find(h => (h.label || '').toLowerCase() === 'left') || null; }
+    function pickRight(hands) { return (hands || []).find(h => (h.label || '').toLowerCase() === 'right') || null; }
 
-  // Simple exponential smoothing
-  const smooth = (prev, next, a) => prev == null ? next : (prev * (1-a) + next * a);
-  let sRot = null, sScale = null, sHue = null, sBlur = 10;
+    // Simple exponential smoothing
+    const smooth = (prev, next, a) => prev == null ? next : (prev * (1 - a) + next * a);
+    let sRot = null, sScale = null, sHue = null, sBlur = 10;
 
-    async function poll(){
+    async function poll() {
       try {
         const res = await fetch('/api/gesture');
-        if(!res.ok) throw new Error('bad');
+        if (!res.ok) throw new Error('bad');
         const data = await res.json();
-  if(typeof data.mode === 'number'){ mode = data.mode; }
-  if(typeof data.mapping_mode === 'boolean'){ mappingMode = data.mapping_mode; }
-  if(typeof data.active_param_idx === 'number'){ activeParam = data.active_param_idx; }
-  // Reset per side and hide by default
-  handLeftEl.innerHTML = '';
-  handRightEl.innerHTML = '';
-  handLeftEl.style.display = 'none';
-  handRightEl.style.display = 'none';
+        if (typeof data.mode === 'number') { mode = data.mode; }
+        if (typeof data.mapping_mode === 'boolean') { mappingMode = data.mapping_mode; }
+        if (typeof data.active_param_idx === 'number') { activeParam = data.active_param_idx; }
+        // Reset per side and hide by default
+        handLeftEl.innerHTML = '';
+        handRightEl.innerHTML = '';
+        handLeftEl.style.display = 'none';
+        handRightEl.style.display = 'none';
         (data.hands || []).forEach(h => {
           const isLeft = (h.label || '').toLowerCase() === 'left';
-          if(mode === MODE_1){
+          if (mode === MODE_1) {
             const palmOpen = !!h.palm_open;
             const rot = h.cc && h.cc.wrist_rotation !== undefined ? h.cc.wrist_rotation : '-';
-            const html = `<div class="hand"><span class="${palmOpen?'param-open':'param-closed'}">${palmOpen?'OPEN':'CLOSED'}</span><span class="lbl">·</span><span class="param-rot">Rot:${rot}</span></div>`;
+            const html = `<div class="hand"><span class="${palmOpen ? 'param-open' : 'param-closed'}">${palmOpen ? 'OPEN' : 'CLOSED'}</span><span class="lbl">·</span><span class="param-rot">Rot:${rot}</span></div>`;
             const el = isLeft ? handLeftEl : handRightEl; el.innerHTML = html; el.style.display = 'block';
           } else {
             const pinch = h.cc && h.cc.pinch !== undefined ? h.cc.pinch : '-';
@@ -233,13 +437,13 @@
         // Flowers background control: show only with LEFT palm; control with RIGHT hand
         try {
           const ctrl = window.flowersControl;
-          if(ctrl){
+          if (ctrl) {
             const left = pickLeft(data.hands);
             ctrl.setVisible(!!(left && left.palm_open));
             // Left-hand Y-axis controls blur intensity (0..127). Top=127 => less blur; Bottom=0 => more blur.
-            if(left && left.cc && typeof left.cc.y_axis === 'number'){
+            if (left && left.cc && typeof left.cc.y_axis === 'number') {
               const y = left.cc.y_axis;
-              const targetBlur = (1 - (y/127)) * 20; // 0px..24px
+              const targetBlur = (1 - (y / 127)) * 20; // 0px..24px
               sBlur = smooth(sBlur, targetBlur, 0.25);
               bgCanvas.style.filter = `blur(${sBlur.toFixed(1)}px) saturate(1.2) brightness(0.95)`;
             } else {
@@ -248,21 +452,21 @@
               bgCanvas.style.filter = `blur(${sBlur.toFixed(1)}px) saturate(1.2) brightness(0.95)`;
             }
             const right = pickRight(data.hands);
-            if(right && right.cc){
+            if (right && right.cc) {
               const rot = typeof right.cc.wrist_rotation === 'number' ? right.cc.wrist_rotation : null;
-              if(rot !== null){
-                const targetSpeed = 0.2 + (rot/127) * 6.0; // a bit wider range
+              if (rot !== null) {
+                const targetSpeed = 0.2 + (rot / 127) * 6.0; // a bit wider range
                 sRot = smooth(sRot, targetSpeed, 0.25);
                 ctrl.setRotationSpeed(sRot);
               }
-              if(typeof right.pinch_norm === 'number'){
+              if (typeof right.pinch_norm === 'number') {
                 const targetScale = 0.5 + right.pinch_norm * 2.2; // 0.5..2.7
                 sScale = smooth(sScale, targetScale, 0.25);
                 ctrl.setSizeScale(sScale);
               }
               const y = typeof right.cc.y_axis === 'number' ? right.cc.y_axis : null;
-              if(y !== null){
-                const targetHue = Math.round((y/127) * 360);
+              if (y !== null) {
+                const targetHue = Math.round((y / 127) * 360);
                 sHue = smooth(sHue, targetHue, 0.2);
                 ctrl.setPaletteFromHue(sHue);
               }
@@ -272,38 +476,39 @@
               sScale = sScale == null ? null : smooth(sScale, 1.0, 0.08);
             }
           }
-        } catch(_e){}
+        } catch (_e) { }
 
         statusLine.textContent = 'Live';
         updateModeLine();
-      } catch(err){
+      } catch (err) {
         statusLine.textContent = 'Backend Error';
       } finally {
-        setTimeout(poll, 25); 
+        setTimeout(poll, 25);
       }
     }
     poll();
 
-    async function pushState(){
+    async function pushState() {
       try {
-        await fetch('/api/state', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ mode, mapping_mode: mappingMode, active_param_idx: activeParam }) });
-      } catch(_){}
+        await fetch('/api/state', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode, mapping_mode: mappingMode, active_param_idx: activeParam }) });
+      } catch (_) { }
     }
 
     window.addEventListener('keydown', e => {
-      if(e.repeat) return;
+      if (e.repeat) return;
       const k = e.key.toLowerCase();
-  if(k === '1'){ mode = MODE_1; pushState(); }
-  else if(k === '2'){ mode = MODE_2; pushState(); }
-  else if(k === 'r'){ mappingMode = !mappingMode; pushState(); }
-  // removed m/h keys (unused)
-      else if(/[0-9]/.test(k)){
+      if (k === '1') { mode = MODE_1; pushState(); }
+      else if (k === '2') { mode = MODE_2; pushState(); }
+      else if (k === 'r') { mappingMode = !mappingMode; pushState(); }
+      // removed m/h keys (unused)
+      else if (/[0-9]/.test(k)) {
         const num = Number(k);
         const valid = PARAMS[mode].some(p => p.k === num);
-        if(valid){ activeParam = num; pushState(); }
+        if (valid) { activeParam = num; pushState(); }
       }
       updateModeLine();
     });
   </script>
 </body>
+
 </html>
