@@ -17,12 +17,6 @@
       powerPreference: "high-performance",
     });
   } catch (_) { gl = null; }
-  if (!gl) {
-    const s = document.createElement("script");
-    s.src = "/static/flowers/script.js";
-    document.head.appendChild(s);
-    return;
-  }
 
   // DPR-aware sizing
   const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
